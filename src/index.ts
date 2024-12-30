@@ -122,7 +122,7 @@ async function restoreMiseCache(): Promise<void> {
 }
 
 async function setupMise(version: string): Promise<void> {
-  const miseBinDir = path.join(miseDir(), 'bin')
+  const miseBinDir = path.join(miseDir(), '..', '..', 'bin') // ~/.local/bin
   const miseBinPath = path.join(
     miseBinDir,
     getOS() === 'windows' ? 'mise.exe' : 'mise'
@@ -145,14 +145,27 @@ async function setupMise(version: string): Promise<void> {
       await io.mv(path.join(os.tmpdir(), 'mise/bin/mise.exe'), miseBinPath)
     } else {
       if (ext === '') {
-        await exec.exec('sh', ['-c', `curl -fsSL ${url} > ${miseBinPath}`])
-        await exec.exec('chmod', ['+x', miseBinPath])
-      } else {
-        await exec.exec('sh', [
+        await exec.exec('wsl', [
+          'sh',
           '-c',
-          `curl -fsSL ${url} | tar --zstd -xf - -C ${os.tmpdir()} && mv ${os.tmpdir()}/mise/bin/mise ${miseBinPath}`
+          `curl -fsSL ${url} > ${miseBinPath}`
+        ])
+        await exec.exec('wsl', ['chmod', '+x', miseBinPath])
+      } else {
+        await exec.exec('wsl', [
+          'sh',
+          '-c',
+          `cd $(mktemp -d) && curl -fsSL ${url} | tar --zstd -xf - -C . && mv ./mise/bin/mise ${miseBinPath}`
         ])
       }
+      await exec.exec('wsl', [
+        'sh',
+        '-c',
+        'echo \'eval "$(~/.local/bin/mise activate bash)"\' >> ~/.bashrc'
+      ])
+      // await exec.exec('wsl', ['sh', '-c', 'echo export PATH=$HOME/.local/bin:$PATH >> $HOME/.bashrc'])
+      await exec.exec('wsl', ['sh', '-c', 'printenv PATH'])
+      await exec.exec('wsl', ['sh', '-c', 'type mise'])
     }
   }
   core.addPath(miseBinDir)
@@ -180,14 +193,15 @@ async function setMiseToml(): Promise<void> {
   }
 }
 
-function getOS(): string {
-  switch (process.platform) {
+export function getOS(): string {
+  const platform = process.env.FORCE_OS ?? process.platform
+  switch (platform) {
     case 'darwin':
       return 'macos'
     case 'win32':
       return 'windows'
     default:
-      return process.platform
+      return platform
   }
 }
 
